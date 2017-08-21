@@ -1,0 +1,207 @@
+#!/usr/bin/env node
+'use strict';
+const fs = require('fs');
+const stream = require('stream');
+const path = require('path');
+const readline = require('readline');
+const dateFormat = require('dateformat');
+const idsLibrary = require('./lib/ids.js');
+const afdko = require('./lib/afdko.js');
+const afs = require('./lib/afs.js');
+const proc = require('./lib/process.js');
+const options = {
+    dict: path.resolve(__dirname, './data/ids-cdp-dict.txt'),
+    comp: path.resolve(__dirname, './data/ids-cdp-comp.txt')
+};
+const yargs = require('yargs')
+    .epilog('IDS Components Query and IDS Components to PDF\nCopyright (c) 2017 Jimmy Page.')
+    .command({
+        command: 'char <character>',
+        describe: 'Look up IDS of a character',
+        handler: async (argv) => {
+            if (! await checkInitialized()) {
+                process.exit(1);
+                return;
+            }
+            let result = await idsQueryByChar(argv.character, options.dict);
+            process.stdout.write(result + '\n');
+            process.exit(0);
+        }
+    })
+    .command({
+        command: 'comp <component>',
+        describe: 'List characters containing the component',
+        handler: async (argv) => {
+            if (! await checkInitialized()) {
+                process.exit(1);
+                return;
+            }
+            let chars = await idsQueryByComp(argv.component, options.comp);
+            process.stdout.write(chars + '\n');
+            process.exit(0);
+        }
+    })
+    .command({
+        command: 'pdf <component>',
+        describe: 'Generate PDF of characters containing the component (Requires AFDKO)',
+        builder: (yargs) => {
+            yargs.option('output', {
+                describe: 'Output filename',
+                alias: 'o'
+            }).option('font', {
+                describe: 'Font filename',
+                alias: 'f'
+            }).option('index', {
+                describe: 'Font index of a TTC',
+                alias: 'i',
+                default: 0
+            })
+        },
+        handler: async (argv) => {
+            if (! await checkInitialized()) {
+                process.exit(1);
+                return;
+            }
+            let charsStr = await idsQueryByComp(argv.component, options.comp);
+            let chars = [...idsLibrary.iterableIdsString(charsStr)];
+            let unicodes = chars.filter(x => !/\&.*?\;/.test(x)).map(x => idsLibrary.knownCharCodeAt(x, 0));
+            let output = argv.output ? path.resolve(argv.output) : path.resolve(argv.component + '.pdf');
+            let font = path.resolve(argv.font);
+            let fontIndex = argv.index
+            let exitCode = await generatePDF(unicodes, output, font, fontIndex);
+            process.exit(exitCode);
+        }
+    })
+    .demandCommand()
+    .usage('\nUsage:\n\
+        |$0 <command> <args>'
+        .replace(/^\s*\|/gm, '')) //g: global, m: multi-line mode
+    .example('IDS of 鮮', 'char 鮮')
+    .example('Characters containing 寺', 'comp 寺')
+    .example('Get a PDF of characters containing 骨 in the given font', 'pdf 骨 -o 骨.pdf -f font.otf')
+    .example('Get a PDF of characters from a TTC', 'pdf 骨 -f font.ttc -i 1');
+const argv = yargs.argv;
+
+async function idsQueryByChar(chars, idsdict) {
+    let result = '';
+    await findLine(idsdict, x => ~chars.indexOf(x), columns => {
+        var obj = JSON.parse(columns[1]);
+        result += JSON.stringify(obj, null, 2) + '\n';
+    });
+    return result;
+}
+
+async function idsQueryByComp(comps, idscomp) {
+    let chars = '';
+    await findLine(idscomp, x => ~comps.indexOf(x), columns => {
+        chars += columns[1];
+    });
+    return chars;
+}
+
+async function generatePDF(unicodes, output, font, fontIndex) {
+    if (!await checkAFDKO()) {
+        process.stderr.write('Cannot generate PDF since AFDKO is not installed. Please refer to https://github.com/adobe-type-tools/afdko/ .\n');
+        return 1;
+    }
+    // check if the font is TTC
+    let ttfDicts = await proc.run('spot', ['-tttcf', font], undefined, true);
+    let regexDicts = /\[(\d+)\]\=([A-Za-z0-9]{8,})/g, dict, ttcArgs = [];
+    while (dict = regexDicts.exec(ttfDicts)) {
+        if (fontIndex == (dict[1] - 0)) {
+            ttcArgs.push('-o0x' + dict[2]);
+            process.stdout.write('Font Collection Info ==========\n');
+            process.stdout.write(ttfDicts);
+            process.stdout.write(`Using offset 0x${dict[2]}.\n`);
+            break;
+        }
+    }
+    // get cmap of the font. 'spot' returns decimal unicode if '=8' is used for cmap. use '=7' for hex.
+    let cmap = await proc.run('spot', ['-t', 'cmap=8', ...ttcArgs, font], undefined, true);
+    let names = new Set(); // matched glyph names
+    let cmapUnicode = false; // if the cmap is a unicode-related one
+    let platform3 = false;
+    for (let line of cmap.split('\n')) {
+        // a new section starts
+        if (line.startsWith('platformId=')) {
+            cmapUnicode = false, platform3 = false;
+            // https://www.microsoft.com/typography/otspec/name.htm
+            // Either Platform 0 (Unicode) or Platform 3 (Windows) with Encoding 1 (UCS-2) or 10 (UCS-4) can be accepted.
+            // 'spot' calls Encoding ID as ScriptId.
+            if (line == 'platformId=0')
+                cmapUnicode = true;
+            else if (line == 'platformId=3')
+                platform3 = true;
+            else
+                cmapUnicode = false;
+        }
+        if (platform3 && (line == 'scriptId  =10' || line == 'scriptId  =1'))
+            cmapUnicode = true;
+
+        if (!cmapUnicode)
+            continue;
+
+        let result = /^\[(\d+).*?\]\=\s\<(.*?)\>/.exec(line);
+        if (result) {
+            let unicode = result[1] - 0, name = result[2];
+            name = name.replace('\\', '/'); // for cid fonts it returns \123, but we need /123.
+            if (name == '-')
+                continue;
+            if (unicodes.some(x => x == unicode))
+                names.add(name);
+        }
+    }
+    // generate script for 'tx'
+    let scriptContent = afdko.getTxScript('pdf', names.values(), font, output, fontIndex);
+    let script = path.resolve('script_' + dateFormat(Date.now(), 'yyyymmdd_HHMMss') + '.txt');
+    await afs.write(fs.createWriteStream(script), scriptContent);
+    await proc.run('tx', ['-s', `${script}`]);
+    process.stdout.write(`PDF generated: ${output}\n`);
+    return 0;
+}
+
+function findLine(filename, predicate, processor) {
+    return new Promise((resolve, reject) => {
+        var reader = readline.createInterface(fs.createReadStream(filename));
+        reader.on('close', resolve).on('error', reject).on('line', parseLine);
+    });
+    function parseLine(line) {
+        if (/^(\#|\;|\s)/.test(line))
+            return; // ignore comments
+        var cols = line.split('\t');
+        if (cols.length > 0) {
+            try {
+                if (predicate(cols[0]))
+                    processor(cols);
+            } catch (err) {
+                process.stderr.write('Failed to parse json. Please re-generate the dictionary. \n' + cols[1] + '\n');
+            }
+        }
+    }
+}
+
+async function checkAFDKO() {
+    try {
+        await proc.run('which', ['tx'], undefined, true);
+        await proc.run('which', ['spot'], undefined, true);
+        return true;
+    }
+    catch (e) {
+        return false;
+    }
+}
+
+async function checkInitialized() {
+    let initialized;
+    try {
+        initialized = (await afs.exists(options.comp)) && (await afs.exists(options.dict));
+    } catch (e) {
+        initialized = false;
+    }
+    if (initialized)
+        return true;
+    else {
+        process.stderr.write('Please run ids_generate.sh or idsquery.js to initialize IDS database.\n');
+        return false;
+    }
+}

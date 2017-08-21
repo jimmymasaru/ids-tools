@@ -1,0 +1,16 @@
+{
+  "name": "ids_tools",
+  "version": "1.0.0",
+  "description": "IDS Tools",
+  "main": "idsquery.js",
+  "dependencies": {
+    "dateformat": "^2.0.0",
+    "yargs": "^8.0.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jimmy Page",
+  "license": "GPL-2.0"
+}

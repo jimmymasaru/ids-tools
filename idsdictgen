@@ -1,0 +1,221 @@
+#!/usr/bin/env node
+'use strict';
+const idsLibrary = require('./lib/ids.js');
+const fs = require('fs');
+const readline = require('readline');
+const progressBar = require('./lib/bar');
+const yargs = require('yargs')
+    .epilog('IDS Dictionary Generator\nCopyright (c) 2017 Jimmy Page.')
+    .alias('?', 'help')
+    .alias('usage', 'help')
+    .describe('help', 'Display this help.')
+    .describe('char', 'Output file for character index.')
+    .describe('comp', 'Output file for component index.')
+    .demand('char', 'Please provide character index output file.')
+    .demand('comp', 'Please provide component index output file.')
+    .usage('\nUsage:\n\
+        |$0 <input>|stdin --char <char_dict_output> --comp <comp_dict_ourput> \n\
+        |$0 ids-cdp.txt --char ids-dict.txt --comp ids-comp.txt'
+        .replace(/^\s*\|/gm, '')); //g: global, m: multi-line mode
+const argv = yargs.argv;
+
+if (argv.help) {
+    yargs.showHelp();
+    process.exit(0);
+}
+
+var reader = readline.createInterface({
+    input: argv._[0] ? fs.createReadStream(argv._[0]).on('error', errExit) : process.stdin
+});
+var writer;
+var pb = new progressBar(500, writer === process.stdout);
+
+reader.on('line', parseLine);
+reader.on('close', parseLineCompleted);
+
+var entries = [];
+var components = [];
+
+function parseLine(line) {
+    // ignore comments or empty lines
+    if (/^[;#\s]/.test(line))
+        return;
+    var cols = line.split('\t');
+    if (cols.length < 3)
+        return;
+    pb.step();
+    // var unicode = cols[0];
+    var char = cols[1];
+    var segments = cols.slice(2);
+    var entry = idsLibrary.getEntry(char, segments);
+    if (entry)
+        entries.push(entry);
+}
+
+function parseLineCompleted() {
+    pb.finish();
+    setImmediate(lexicographer, 0);
+}
+
+function lexicographer(startIndex) {
+    if (writer == null)
+        writer = fs.createWriteStream(argv.char).on('error', errExit);
+    var i = startIndex;
+    while (i < entries.length) {
+        var entry = entries[i];
+        try {
+            // console.log(JSON.stringify(entry));
+            if (!entry.atomic)
+                entry.idsList.forEach(ids => {
+                    decomposeIDS(ids);
+                    collectComponent(entry.char, ids);
+                });
+            // console.log(JSON.stringify(entry));
+            pb.step();
+            writer.write(entry.char + '\t' + JSON.stringify(entry) + '\n');
+        } catch (e) {
+            console.error('\nAn error occurred for this entry\n' + JSON.stringify(entry));
+        }
+        ++i;
+        if (i >= entries.length) {
+            // the last one has completed
+            setImmediate(() => {
+                pb.finish();
+                writer.end('', () => {
+                    writer = null;
+                    setImmediate(writeComponents);
+                });
+            });
+        } else {
+            setImmediate(lexicographer, i);
+            break;
+        }
+    }
+}
+
+function decomposeIDS(ids) {
+    if (typeof ids != 'object' || !ids instanceof idsLibrary.IDS) {
+        console.error('Unexpected IDS: ' + ids);
+        return;
+    }
+    var descriptor = ids.d;
+    var operands = ids.o;
+    var region = ids.r;
+    for (var i = 0; i < operands.length; i++) {
+        var operand = operands[i];
+        if (typeof operand == 'string') {
+            // theoretically there should only be one matched result so we use 'find()' here to get only one result
+            var matchedEntry = entries.find(entry => entry.char == operand);
+            if (matchedEntry) {
+                if (!matchedEntry.atomic) {
+                    operands[i] = matchedEntry;
+                    operand = operands[i];
+                    matchedEntry.idsList.forEach(item => {
+                        if (!item.isDecomposed())
+                            decomposeIDS(item);
+                    });
+                }
+            } else {
+                // cannot find. maybe it's a string and not exist. maybe it's an ids.
+                console.error(operand + ' not found.');
+            }
+        }
+        else if (typeof operand == 'object') {
+            if (operand instanceof idsLibrary.IDS) {
+                decomposeIDS(operands[i]);
+            } else if (operand instanceof idsLibrary.Entry) {
+                // already decomposed
+            } else {
+                console.error('typeof operand returns ' + (typeof operand));
+            }
+        } else {
+            console.error('typeof operand returns ' + (typeof operand));
+        }
+    }
+    ids.isDecomposed(true);
+}
+
+function collectComponent(char, ids) {
+    if (typeof ids != 'object' || !ids instanceof idsLibrary.IDS) {
+        console.error('Unexpected IDS: ' + ids);
+        return;
+    }
+    var operands = ids.o;
+    for (var i = 0; i < operands.length; i++) {
+        var operand = operands[i];
+        if (typeof operand == 'string') {
+            addToComponentDict(operand, char);
+        }
+        else if (typeof operand == 'object') {
+            if (operand instanceof idsLibrary.Entry) {
+                addToComponentDict(operand.char, char);
+                operand.idsList.forEach(item => collectComponent(char, item));
+            } else if (operand instanceof idsLibrary.IDS) {
+                collectComponent(char, operand);
+            }
+            else {
+                console.error('typeof operand returns ' + (typeof operand));
+            }
+        } else {
+            console.error('typeof operand returns ' + (typeof operand));
+        }
+    }
+}
+
+
+function addToComponentDict(component, char) {
+    if (!components[component])
+        components[component] = new Set();
+    components[component].add(char);
+}
+
+function writeComponents() {
+    var keys = [];
+    for (var key in components) {
+        if (components.hasOwnProperty(key)) {
+            keys.push(key);
+        }
+    }
+    keys.sort();
+    componentWriter(keys, 0);
+}
+
+function componentWriter(keys, startIndex) {
+    if (writer == null)
+        writer = fs.createWriteStream(argv.comp).on('error', errExit);
+    var i = startIndex;
+    while (i < keys.length) {
+        var component = keys[i];
+        var chars = components[component];
+        pb.step();
+        var line = component + '\t';
+        chars.forEach(char => line += char);
+        line += '\n';
+        writer.write(line);
+        ++i;
+        if (i >= keys.length) {
+            // the last one has completed
+            setImmediate(() => {
+                pb.finish();
+                writer.end('', () => {
+                    writer = null;
+                    successExit();
+                });
+            });
+        } else {
+            setImmediate(componentWriter, keys, i);
+            break;
+        }
+    }
+}
+
+function successExit() {
+    process.exit(0);
+}
+
+function errExit(err) {
+    process.stderr.write('An error has occurred. \n');
+    if (err)
+        process.stderr.write(err + '\n');
+    process.exit(1);
+}
