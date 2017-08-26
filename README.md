@@ -28,6 +28,8 @@ idsquery comp 寺
 [AFDKO](https://github.com/adobe-type-tools/afdko) is required.
 ```
 idsquery pdf [component] -o [PDF filename] -f [font file] -i [font index for TTC, 0 if ommitted]
-idsquery pdf 寺 -o 寺.pdf -f /Library/Fonts/PingFang.ttc -i 2
+idsquery pdf 寺 -o 寺.pdf -f /System/Library/Fonts/PingFang.ttc -i 2
 idsquery pdf 名 -o 名.pdf -f /Library/Fonts/KozGoPr6N-Regular.otf
 ```
+![Sample 1](img/sample1.png "Sample 1")
+
