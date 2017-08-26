@@ -2,14 +2,14 @@
 Tools for querying IDS (Ideographic Description Sequence) of ideographs.
 
 ## Installation
+### Homebrew
+`brew install jimmymasaru/repo/ids-tools`
+### Manual Install
 Node.js is required to run IDS tools.
 You can just clone/download this repository. After running `init.sh` to initialize you can run `idsquery`.
 
 ## License
 GPLv2
-
-### Homebrew
-(To be completed)
 
 ## Usage
 ### Decomposing an Ideograph
@@ -29,5 +29,5 @@ idsquery comp 寺
 ```
 idsquery pdf [component] -o [PDF filename] -f [font file] -i [font index for TTC, 0 if ommitted]
 idsquery pdf 寺 -o 寺.pdf -f /Library/Fonts/PingFang.ttc -i 2
-idsquery pdf 寺 -o 寺.pdf -f (???HiraginoMaru)
+idsquery pdf 名 -o 名.pdf -f /Library/Fonts/KozGoPr6N-Regular.otf
 ```
