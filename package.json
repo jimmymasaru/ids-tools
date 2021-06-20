@@ -1,11 +1,11 @@
 {
   "name": "ids_tools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "IDS Tools",
   "main": "idsquery.js",
   "dependencies": {
-    "dateformat": "^2.0.0",
-    "yargs": "^8.0.2"
+    "dateformat": "^4.5.1",
+    "yargs": "^17.0.1"
   },
   "devDependencies": {},
   "scripts": {
