@@ -92,7 +92,7 @@ async function idsQueryByChar(chars, idsdict) {
 }
 
 async function idsQueryByComp(comps, idscomp) {
-    let chars = '';
+    let chars = comps;
     await findLine(idscomp, x => ~comps.indexOf(x), columns => {
         chars += columns[1];
     });
