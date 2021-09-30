@@ -1,14 +1,12 @@
-'use strict';
-
 /**
  * Generate script file for 'tx'.
  * @param {string} outputMode pdf, t1, cff or any other values supported by 'tx'
- * @param {array|string} glyphs 
+ * @param {array|string} glyphs
  * @param {string} fontfile Font to be processed against
  * @param {string} outputfontfile Output file name
  * @param {int} fontIndex font index in the TTC
  */
-function getTxScript(outputMode, glyphs, fontfile, outputfontfile, fontIndex) {
+export function getTxScript(outputMode: string, glyphs: string[] | string, fontfile: string, outputfontfile: string, fontIndex: number) {
     var glyphParameter = '';
     if (typeof glyphs == 'string') {
         glyphParameter = glyphs;
@@ -30,23 +28,23 @@ function getTxScript(outputMode, glyphs, fontfile, outputfontfile, fontIndex) {
 }
 
 /**
- * 
- * @param {array} fms Font and Mapping files
- * @param {string} outputfontfile 
- * @param {string} cidfontinfo Path to cidfontinfo
+ *
+ * @param {array} entries Font and Mapping files
+ * @param {string} outputFontFile
+ * @param {string} cidFontInfo Path to cidfontinfo
  */
-function getMergeFontsScript(fms, outputfontfile, cidfontinfo) {
+export function getMergeFontsScript(entries: Entry[], outputFontFile: string, cidFontInfo: string) {
     var script = '';
-    if (cidfontinfo)
-        script += `-cid ${cidfontinfo}\n`;
-    script += `${outputfontfile}\n`;
-    for (let entry of fms) {
+    if (cidFontInfo)
+        script += `-cid ${cidFontInfo}\n`;
+    script += `${outputFontFile}\n`;
+    for (let entry of entries) {
         script += `${entry.mapping} ${entry.font}\n`;
     }
     return script;
 }
 
-module.exports = {
-    getTxScript,
-    getMergeFontsScript
+export type Entry = {
+    mapping: string,
+    font: string
 }

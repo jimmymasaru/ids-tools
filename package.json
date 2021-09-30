@@ -4,10 +4,15 @@
   "description": "IDS Tools",
   "main": "idsquery.js",
   "dependencies": {
-    "dateformat": "^4.5.1",
-    "yargs": "^17.0.1"
+    "@types/node": "^16.10.1",
+    "dateformat": "^5.0.1",
+    "yargs": "^17.2.1"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "@types/yargs": "^17.0.3",
+    "typescript": "^4.4.3",
+    "ts-node": "^10.2.1"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

@@ -1,9 +1,8 @@
-'use strict';
-const fs = require('fs');
+import fs from "fs";
 
-async function read(filename) {
+export async function read(filename: string) {
     return new Promise((resolve, reject) => {
-        let reader = fs.readFile(filename, 'utf8', (err, data) => {
+        fs.readFile(filename, 'utf8', (err, data) => {
             if (err)
                 reject(err);
             else
@@ -12,10 +11,10 @@ async function read(filename) {
     });
 }
 
-async function write(writer, content) {
+export async function write(writer: NodeJS.WritableStream, content: string) {
     return new Promise((resolve, reject) => {
         writer.on('error', reject);
-        if (writer == process.stdout) {
+        if (writer === process.stdout) {
             writer.on('drain', resolve);
         } else {
             writer.on('close', resolve);
@@ -25,20 +24,18 @@ async function write(writer, content) {
     });
 }
 
-async function mkdir(dir) {
-    return new Promise((resolve, reject) => {
+export async function mkdir(dir: string) {
+    return new Promise<void>((resolve, reject) => {
         fs.exists(dir, exists => {
             if (exists) {
                 fs.stat(dir, (err, stats) => {
-                    if (stats.isDirectory) {
-                        // dir exists
+                    if (stats.isDirectory()) {
                         resolve();
                     } else {
                         reject(Error('File exists and is not a directory.'))
                     }
                 });
-            }
-            else {
+            } else {
                 fs.mkdir(dir, err => {
                     if (err)
                         reject(err)
@@ -50,7 +47,7 @@ async function mkdir(dir) {
     })
 }
 
-async function exists(filename) {
+export async function exists(filename: string) {
     return new Promise((resolve, reject) => {
         fs.exists(filename, exists => {
             if (exists)
@@ -59,11 +56,4 @@ async function exists(filename) {
                 reject();
         })
     })
-}
-
-module.exports = {
-    mkdir,
-    read,
-    write,
-    exists
 }
